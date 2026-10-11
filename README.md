@@ -18,9 +18,10 @@ $ notsystemd run /lib/systemd/system/unifi-core.service
 - `notsystemd is-active UNIT` exits 0 while the unit is active, for a readiness probe.
 - `notsystemd show UNIT` prints the unit's recorded state as JSON.
 - `notsystemd notify [--ready] [--status TEXT] [KEY=VALUE]...` sends a notification to `$NOTIFY_SOCKET`, like `systemd-notify`.
+- `notsystemd sudo`, `systemctl`, `systemd-run` and `timedatectl` stand in for those commands; see [Shims](#shims).
 
 Every command takes `--state-dir` (default `/run/notsystemd`).
-`run` writes `<state-dir>/<unit>.json` on every state change, with the unit's `ActiveState`, `SubState`, `StatusText`, `MainPID` and result, and puts the notify socket beside it.
+`run` writes `<state-dir>/<unit>.json` on every state change, with the unit's `ActiveState`, `SubState`, `StatusText`, `MainPID`, result and its own PID, and puts the notify socket beside it.
 Mount the directory as an `emptyDir` shared by the pod's containers and each can read the others' state.
 
 ## What `run` supports
@@ -45,10 +46,25 @@ Anywhere else it makes itself a child subreaper, so a daemon that double-forks s
 `Restart=` is not implemented on purpose: the container exits with the service and Kubernetes restarts it.
 Dependencies between units (`After=`, `Requires=`, `Wants=`) are the pod's business too.
 
+## Shims
+
+The software notsystemd exists for does more than get started by systemd: it runs `systemctl`, `timedatectl` and `systemd-run`, through `sudo`.
+Invoked under one of those names, notsystemd answers as that command, so an image links them to it; the flake's `shims` package holds the links.
+The shims find unit state in `$NOTSYSTEMD_STATE_DIR`, default `/run/notsystemd`.
+
+- `systemctl` answers `is-active`, `is-failed`, `is-enabled`, `show` (with `-p`/`--property` and `--value`), `status` and `is-system-running` from the state directory.
+  A unit the pod does not run reads as inactive, not enabled, and `LoadState=not-found`.
+  `stop`, `restart` and their variants send the unit's notsystemd `SIGTERM`, so its container exits and Kubernetes starts it again; `reload` sends it `SIGHUP`, and `kill` signals the main process.
+  Signalling a unit in another container needs `shareProcessNamespace: true` on the pod.
+  `start`, `enable`, `disable`, `mask`, `unmask`, `daemon-reload` and `reset-failed` succeed without doing anything, since the pod spec decides which units run.
+- `timedatectl` reports NTP as enabled and synchronised, because a container's clock is the node's, and accepts `set-*` without changing anything.
+- `systemd-run` runs its command in place, as `--uid`/`--gid` with `--setenv`, waiting for it under `--wait` or `--pipe` and starting it in the background otherwise.
+- `sudo` runs its command as `-u`/`-g`, keeping the environment apart from `HOME`, `USER` and `LOGNAME`, and asks for no password.
+  Only root can switch users, as with sudo's `-n`.
+
 ## Planned
 
-The software notsystemd exists for does more than get started by systemd: it calls `systemctl` and `timedatectl`, and reads unit state from `org.freedesktop.systemd1` over D-Bus.
-The next pieces answer those from the state directory: `systemctl` and `timedatectl` shims for the common verbs, and a D-Bus facade serving `org.freedesktop.systemd1` and `org.freedesktop.timedate1`.
+A D-Bus facade serving `org.freedesktop.systemd1` from the state directory, for software that watches units' `ActiveState` and `StatusText` over the system bus.
 
 ## Development
 

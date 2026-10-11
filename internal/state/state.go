@@ -24,6 +24,11 @@ type Unit struct {
 	// StatusText is the last STATUS= the service sent.
 	StatusText string `json:"statusText,omitempty"`
 	MainPID    int    `json:"mainPID,omitempty"`
+	// SupervisorPID is the notsystemd process running the unit, which the
+	// systemctl shim signals to restart, stop or reload it. It is only
+	// reachable from another container when the pod shares its process
+	// namespace.
+	SupervisorPID int `json:"supervisorPID,omitempty"`
 	// Result is success, or why the unit failed: exit-code, signal,
 	// timeout, watchdog or resources.
 	Result     string    `json:"result"`

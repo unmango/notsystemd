@@ -20,11 +20,12 @@ make tidy   # go mod tidy + regenerate nix/gomod2nix.toml; run after any go.mod 
 
 ## Layout
 
-- `cmd/notsystemd`: the CLI (`run`, `is-active`, `show`, `notify`), stdlib `flag` only.
+- `cmd/notsystemd`: the CLI (`run`, `is-active`, `show`, `notify`, and the shims), stdlib `flag` only. It dispatches to a shim when `argv[0]` is one of `shim.Names`.
 - `internal/unit`: unit file parsing (`File`, drop-ins), Exec line parsing and expansion (`Command`), environment files, and `Service`, the typed view of `[Service]`.
 - `internal/supervisor`: the lifecycle. `reaper.go` owns every `wait4`; nothing else may wait on a child, since a second waiter would steal statuses.
 - `internal/notify`: the `$NOTIFY_SOCKET` listener and a sender.
 - `internal/state`: the per-unit JSON state file other containers and probes read.
+- `internal/shim`: `sudo`, `systemctl`, `systemd-run` and `timedatectl` stand-ins, answered from the state files. `Exec` replaces the process, so its specs run it in a subprocess through the suite's `TestMain`.
 
 ## Conventions
 

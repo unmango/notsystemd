@@ -75,6 +75,8 @@ func (s *Supervisor) Run(ctx context.Context, reload <-chan struct{}) int {
 			ActiveState: "activating",
 			SubState:    "start-pre",
 			Result:      "success",
+
+			SupervisorPID: os.Getpid(),
 		},
 	}
 	defer ru.r.stop()
