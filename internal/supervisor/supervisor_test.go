@@ -135,6 +135,44 @@ ExecStart=/bin/sh -c 'ulimit -Sn > %%D/soft'
 		Expect(h.file("soft")).To(Equal("1000"))
 	})
 
+	It("raises LimitNOFILE=infinity only as far as the kernel allows", func() {
+		var lim syscall.Rlimit
+		Expect(syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim)).To(Succeed())
+		DeferCleanup(syscall.Setrlimit, syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: lim.Cur, Max: lim.Max})
+		h := start(`
+[Service]
+Type=oneshot
+LimitNOFILE=infinity
+ExecStart=/bin/sh -c 'ulimit -Sn > %D/soft'
+`)
+		Expect(h.exitCode()).To(Equal(0))
+		Expect(atoi(h.file("soft"))).To(BeNumerically(">=", lim.Cur))
+	})
+
+	It("passes the result to ExecStop as well as ExecStopPost", func() {
+		h := start(`
+[Service]
+ExecStart=/bin/sh -c 'exec sleep 30'
+ExecStop=/bin/sh -c 'echo stop $SERVICE_RESULT > %D/stop'
+ExecStopPost=/bin/sh -c 'echo post $SERVICE_RESULT > %D/stoppost'
+`)
+		Eventually(h.activeState).Should(Equal("active"))
+		h.cancel()
+		Expect(h.exitCode()).To(Equal(0))
+		Expect(h.file("stop")).To(Equal("stop success"))
+		Expect(h.file("stoppost")).To(Equal("post success"))
+	})
+
+	It("fails cleanly when the unit cannot be prepared", func() {
+		h := start(`
+[Service]
+User=notsystemd-no-such-user
+ExecStart=/bin/sh -c 'exec sleep 30'
+`)
+		Expect(h.exitCode()).NotTo(Equal(0))
+		Expect(h.activeState()).To(Equal("failed"))
+	})
+
 	It("does not start when ExecStartPre fails, unless prefixed with '-'", func() {
 		h := start(`
 [Service]

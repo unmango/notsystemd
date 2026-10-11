@@ -93,6 +93,16 @@ KillSignal=SIGINT
 		Expect(s.SuccessSignals).To(Equal([]syscall.Signal{syscall.SIGUSR1}))
 	})
 
+	It("gives oneshot units no start timeout unless they set one", func() {
+		s, err := service("x.service", "[Service]\nType=oneshot\nExecStart=/a\n")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.TimeoutStart).To(BeZero())
+		Expect(s.TimeoutStop).To(Equal(unit.DefaultTimeout))
+		s, err = service("x.service", "[Service]\nType=oneshot\nExecStart=/a\nTimeoutStartSec=5\n")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.TimeoutStart).To(Equal(5 * time.Second))
+	})
+
 	It("requires ExecStart unless oneshot", func() {
 		_, err := service("x.service", "[Service]\nType=simple\n")
 		Expect(err).To(MatchError(ContainSubstring("no ExecStart")))

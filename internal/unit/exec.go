@@ -193,7 +193,8 @@ func splitWords(s string) ([]word, error) {
 			}
 			i++
 			b.WriteString(unescape(s[i]))
-			inWord = true
+			// An escaped character is literal: `\;` is not a separator.
+			inWord, quoted = true, true
 		default:
 			b.WriteByte(c)
 			inWord = true

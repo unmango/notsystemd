@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -18,11 +21,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: unmango/actions/setup-nix@3ec4ed5a6af9c00f6a39e079df488573c77ebda6 # v1.0.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Only pushes to main publish to the cache, never a pull request's
+          # unreviewed build.
+          cachix_auth_token: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN || '' }}
 
       # Read-only: Go and the rest of nixpkgs come from mangopkgs' pin.
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17

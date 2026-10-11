@@ -36,7 +36,7 @@ Mount the directory as an `emptyDir` shared by the pod's containers and each can
 - `WatchdogSec=` and `WatchdogSignal=`: a missed ping signals the main process and fails the unit.
 - `TimeoutStartSec=`, `TimeoutStopSec=`, `TimeoutSec=`, `KillMode=` and `KillSignal=`, escalating to `SIGKILL` when a stop times out.
 - `SuccessExitStatus=`, with exit statuses and signal names.
-- `LimitNOFILE=`, set on notsystemd itself so every command the unit runs inherits it.
+- `LimitNOFILE=`, set on notsystemd itself so every command the unit runs inherits it, and lowered to what the kernel allows as systemd does.
 - Drop-ins from `<unit>.d/*.conf` and from `--drop-in-dir`, and the `%n`, `%N`, `%p`, `%i`, `%t`, `%S`, `%C`, `%L` and `%E` specifiers.
 
 As PID 1 it reaps every orphan in the container, and treats the whole container as the unit's control group when stopping it.

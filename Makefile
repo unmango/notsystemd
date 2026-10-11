@@ -4,6 +4,7 @@ build:
 	nix build .#
 
 bin/notsystemd: ${GO_SRC} go.mod go.sum
+	mkdir -p $(@D)
 	CGO_ENABLED=0 go build -o $@ ./cmd/notsystemd
 
 test:

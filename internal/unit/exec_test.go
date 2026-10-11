@@ -45,6 +45,14 @@ var _ = Describe("ParseExec", func() {
 		Expect(argv).To(Equal([]string{"/bin/b", ";", "2"}))
 	})
 
+	It("keeps an escaped semicolon as an argument", func() {
+		cmds, err := unit.ParseExec(`/usr/bin/find /tmp -name x -exec rm {} \;`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cmds).To(HaveLen(1))
+		_, argv := cmds[0].Argv(nil)
+		Expect(argv).To(Equal([]string{"/usr/bin/find", "/tmp", "-name", "x", "-exec", "rm", "{}", ";"}))
+	})
+
 	It("expands variables the way systemd does", func() {
 		cmds, err := unit.ParseExec(`/bin/x $OPTS ${ONE}-suffix "$OPTS" pre$ONE $$`)
 		Expect(err).NotTo(HaveOccurred())

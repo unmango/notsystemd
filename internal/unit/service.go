@@ -125,6 +125,11 @@ func NewService(name string, f File) (*Service, error) {
 			return nil, fmt.Errorf("%s: unsupported Type=%s", name, v)
 		}
 	}
+	// systemd disables the start timeout of a oneshot unit unless the unit
+	// sets one; TimeoutStartSec= and TimeoutSec= below still override this.
+	if s.Type == "oneshot" {
+		s.TimeoutStart = 0
+	}
 
 	var err error
 	if s.RemainAfterExit, err = parseBool(get("RemainAfterExit")); err != nil {

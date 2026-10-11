@@ -118,6 +118,14 @@ func (ru *run) setState(active, sub string) {
 func (ru *run) prepare() error {
 	svc := ru.Service
 
+	// First, since finish records the result here even when preparing fails.
+	ru.env = map[string]string{"PATH": defaultPath}
+	for _, kv := range os.Environ() {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			ru.env[k] = v
+		}
+	}
+
 	if svc.UMask != nil {
 		syscall.Umask(int(*svc.UMask))
 	} else {
@@ -126,15 +134,8 @@ func (ru *run) prepare() error {
 	// Every process the unit runs inherits notsystemd's own limit, which
 	// it only ever holds for this one unit.
 	if svc.NoFile != nil {
-		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, svc.NoFile); err != nil {
+		if err := setNoFile(*svc.NoFile); err != nil {
 			return fmt.Errorf("LimitNOFILE: %w", err)
-		}
-	}
-
-	ru.env = map[string]string{"PATH": defaultPath}
-	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			ru.env[k] = v
 		}
 	}
 
@@ -486,6 +487,22 @@ func (ru *run) mainExited(ws syscall.WaitStatus) {
 	}
 }
 
+// setResultEnv exports the unit's result and, once the main process has
+// exited, how it exited, for ExecStop= and ExecStopPost=.
+func (ru *run) setResultEnv() {
+	ru.env["SERVICE_RESULT"] = ru.st.Result
+	if !ru.exited {
+		return
+	}
+	if ru.status.Signaled() {
+		ru.env["EXIT_CODE"] = "killed"
+		ru.env["EXIT_STATUS"] = strings.TrimPrefix(unix(ru.status.Signal()), "SIG")
+	} else {
+		ru.env["EXIT_CODE"] = "exited"
+		ru.env["EXIT_STATUS"] = strconv.Itoa(ru.status.ExitStatus())
+	}
+}
+
 // finish stops whatever is still running and returns the exit code.
 func (ru *run) finish(started bool) int {
 	svc := ru.Service
@@ -500,21 +517,13 @@ func (ru *run) finish(started bool) int {
 	}
 
 	if started && len(svc.ExecStop) > 0 {
+		ru.setResultEnv()
 		ru.runAll(stopCtx, svc.ExecStop, "ExecStop")
 	}
 	ru.terminate(stopCtx)
 
 	ru.setState("deactivating", "stop-post")
-	ru.env["SERVICE_RESULT"] = ru.st.Result
-	if ru.exited {
-		if ru.status.Signaled() {
-			ru.env["EXIT_CODE"] = "killed"
-			ru.env["EXIT_STATUS"] = strings.TrimPrefix(unix(ru.status.Signal()), "SIG")
-		} else {
-			ru.env["EXIT_CODE"] = "exited"
-			ru.env["EXIT_STATUS"] = strconv.Itoa(ru.status.ExitStatus())
-		}
-	}
+	ru.setResultEnv()
 	postCtx, cancelPost := context.WithCancel(context.Background())
 	if svc.TimeoutStop > 0 {
 		postCtx, cancelPost = context.WithTimeout(postCtx, svc.TimeoutStop)
@@ -569,8 +578,14 @@ func (ru *run) terminate(ctx context.Context) {
 	// Anything else still running belongs to the service, which is the
 	// whole container when notsystemd is PID 1.
 	if pid1 && (svc.KillMode == "control-group" || svc.KillMode == "mixed") {
-		if svc.KillMode == "control-group" {
+		switch {
+		case svc.KillMode == "control-group", ru.mainPID == 0:
+			// With no main process to signal first, KillSignal goes to
+			// everything, as it does for control-group.
 			syscall.Kill(-1, svc.KillSignal)
+		default:
+			// mixed: the main process got KillSignal; the rest get SIGKILL.
+			syscall.Kill(-1, syscall.SIGKILL)
 		}
 		select {
 		case <-ru.r.whenIdle():
@@ -776,4 +791,29 @@ func unix(sig syscall.Signal) string {
 		}
 	}
 	return "signal " + strconv.Itoa(int(sig))
+}
+
+// setNoFile applies a LimitNOFILE= request the way systemd's
+// setrlimit_closest does: lowered to what the kernel allows rather than
+// failing, since vendor units commonly ask for infinity.
+func setNoFile(want syscall.Rlimit) error {
+	var cur syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &cur); err != nil {
+		return err
+	}
+	// RLIMIT_NOFILE can never exceed fs.nr_open.
+	if data, err := os.ReadFile("/proc/sys/fs/nr_open"); err == nil {
+		if max, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64); err == nil {
+			want.Max = min(want.Max, max)
+		}
+	}
+	want.Cur = min(want.Cur, want.Max)
+	err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &want)
+	if errors.Is(err, syscall.EPERM) && want.Max > cur.Max {
+		// Without CAP_SYS_RESOURCE the hard limit can only go down.
+		want.Max = cur.Max
+		want.Cur = min(want.Cur, want.Max)
+		err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &want)
+	}
+	return err
 }

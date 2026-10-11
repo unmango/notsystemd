@@ -53,6 +53,11 @@ func (r *reaper) loop() {
 }
 
 func (r *reaper) reap() {
+	// The lock is held across each Wait4 (WNOHANG, so it never blocks), so
+	// that a reaped pid and its status appear to watchAny together: it
+	// cannot see the pid gone and its status not yet recorded.
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for {
 		var ws syscall.WaitStatus
 		pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
@@ -60,19 +65,16 @@ func (r *reaper) reap() {
 			continue
 		}
 		if err == syscall.ECHILD {
-			r.mu.Lock()
 			for _, ch := range r.idle {
 				close(ch)
 			}
 			r.idle = nil
-			r.mu.Unlock()
 			return
 		}
 		if err != nil || pid <= 0 {
 			return
 		}
 
-		r.mu.Lock()
 		if ch, ok := r.waiters[pid]; ok {
 			ch <- ws
 			delete(r.waiters, pid)
@@ -82,7 +84,6 @@ func (r *reaper) reap() {
 			}
 			r.exited[pid] = ws
 		}
-		r.mu.Unlock()
 	}
 }
 
@@ -119,11 +120,15 @@ func (r *reaper) watchAny(pid int) <-chan syscall.WaitStatus {
 				return
 			case <-tick.C:
 				// A child that exited stays visible as a zombie until it is
-				// reaped, so ESRCH means it was never ours.
-				if syscall.Kill(pid, 0) == syscall.ESRCH {
-					r.mu.Lock()
+				// reaped, and reap records the status under the same lock,
+				// so ESRCH with nothing recorded means it was never ours.
+				r.mu.Lock()
+				gone := syscall.Kill(pid, 0) == syscall.ESRCH
+				if gone {
 					delete(r.waiters, pid)
-					r.mu.Unlock()
+				}
+				r.mu.Unlock()
+				if gone {
 					select {
 					case ws := <-reaped:
 						ch <- ws
