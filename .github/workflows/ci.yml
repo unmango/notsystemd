@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - system: x86_64-linux
+            os: ubuntu-latest
+          - system: aarch64-linux
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: unmango/actions/setup-nix@3ec4ed5a6af9c00f6a39e079df488573c77ebda6 # v1.0.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # Read-only: Go and the rest of nixpkgs come from mangopkgs' pin.
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: mangopkgs
+
+      - run: nix flake check
+      # Runs the Go specs in its check phase.
+      - run: nix build .#
+
+  # The one check the main ruleset requires (see unmango/github), because
+  # matrix legs cannot be named as required checks.
+  required:
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.build.result }}
+        run: test "$RESULT" = success

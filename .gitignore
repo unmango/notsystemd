@@ -1,0 +1,7 @@
+/result*
+.envrc
+.direnv/
+bin/
+*.test
+.claude/*
+!.claude/skills/
