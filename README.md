@@ -12,12 +12,12 @@ $ notsystemd run /lib/systemd/system/unifi-core.service
 
 ## Commands
 
-| Command                                                      | What it does                                                                                                                        |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `notsystemd run [--drop-in-dir DIR]... UNIT_FILE`            | Run a service unit until it exits or notsystemd gets SIGTERM or SIGINT. SIGHUP runs `ExecReload=`. Exits with the service's status. |
-| `notsystemd is-active UNIT`                                  | Exit 0 while the unit is active, for a readiness probe.                                                                             |
-| `notsystemd show UNIT`                                       | Print the unit's recorded state as JSON.                                                                                            |
-| `notsystemd notify [--ready] [--status TEXT] [KEY=VALUE]...` | Send a notification to `$NOTIFY_SOCKET`, like `systemd-notify`.                                                                     |
+- `notsystemd run [--drop-in-dir DIR]... UNIT_FILE` runs a service unit until it exits or notsystemd gets SIGTERM or SIGINT.
+  SIGHUP runs `ExecReload=`.
+  It exits with the service's status.
+- `notsystemd is-active UNIT` exits 0 while the unit is active, for a readiness probe.
+- `notsystemd show UNIT` prints the unit's recorded state as JSON.
+- `notsystemd notify [--ready] [--status TEXT] [KEY=VALUE]...` sends a notification to `$NOTIFY_SOCKET`, like `systemd-notify`.
 
 Every command takes `--state-dir` (default `/run/notsystemd`).
 `run` writes `<state-dir>/<unit>.json` on every state change, with the unit's `ActiveState`, `SubState`, `StatusText`, `MainPID` and result, and puts the notify socket beside it.
