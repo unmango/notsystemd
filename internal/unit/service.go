@@ -53,6 +53,14 @@ type Service struct {
 	KillMode       string
 	KillSignal     syscall.Signal
 	WatchdogSignal syscall.Signal
+
+	// SuccessExitStatuses and SuccessSignals are SuccessExitStatus=: exit
+	// statuses and signals counted as a clean exit on top of systemd's own.
+	SuccessExitStatuses []int
+	SuccessSignals      []syscall.Signal
+
+	// NoFile is LimitNOFILE=, or nil to inherit the container's limit.
+	NoFile *syscall.Rlimit
 }
 
 // EnvironmentFile is one EnvironmentFile= entry.
@@ -249,7 +257,51 @@ func NewService(name string, f File) (*Service, error) {
 		}
 	}
 
+	for _, v := range f.Values("Service", "SuccessExitStatus") {
+		for _, word := range strings.Fields(v) {
+			if n, err := strconv.Atoi(word); err == nil {
+				s.SuccessExitStatuses = append(s.SuccessExitStatuses, n)
+				continue
+			}
+			sig, err := ParseSignal(word)
+			if err != nil {
+				return nil, fmt.Errorf("%s: SuccessExitStatus: %w", name, err)
+			}
+			s.SuccessSignals = append(s.SuccessSignals, sig)
+		}
+	}
+
+	if v := get("LimitNOFILE"); v != "" {
+		if s.NoFile, err = ParseLimit(v); err != nil {
+			return nil, fmt.Errorf("%s: LimitNOFILE: %w", name, err)
+		}
+	}
+
 	return s, nil
+}
+
+// ParseLimit reads a resource limit as systemd.exec(5) writes it: one value
+// for both the soft and hard limit, or "soft:hard", each a number or
+// "infinity".
+func ParseLimit(v string) (*syscall.Rlimit, error) {
+	one := func(v string) (uint64, error) {
+		if v == "infinity" {
+			return ^uint64(0), nil
+		}
+		return strconv.ParseUint(v, 10, 64)
+	}
+	softText, hardText, pair := strings.Cut(v, ":")
+	soft, err := one(softText)
+	if err != nil {
+		return nil, err
+	}
+	hard := soft
+	if pair {
+		if hard, err = one(hardText); err != nil {
+			return nil, err
+		}
+	}
+	return &syscall.Rlimit{Cur: soft, Max: hard}, nil
 }
 
 // specifiers returns a replacer for the unit specifiers that make sense

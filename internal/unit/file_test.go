@@ -42,6 +42,15 @@ Environment=B=2
 		Expect(f.Values("Service", "ExecStartPre")).To(Equal([]string{"/b"}))
 	})
 
+	It("ignores trailing whitespace on headers and values", func() {
+		// unifi-core.service.d/cap.conf ships with trailing tabs and no
+		// final newline.
+		f, err := unit.Parse(strings.NewReader("[Service]\t\nUser=root\t\nAmbientCapabilities="))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(value(f, "Service", "User")).To(Equal("root"))
+		Expect(f.Values("Service", "AmbientCapabilities")).To(BeEmpty())
+	})
+
 	It("rejects an assignment outside a section", func() {
 		_, err := unit.Parse(strings.NewReader("Key=Value\n"))
 		Expect(err).To(MatchError(ContainSubstring("outside of a section")))

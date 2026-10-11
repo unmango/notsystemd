@@ -69,6 +69,30 @@ KillSignal=SIGINT
 		Expect(s.ExecStart[0].Privileged).To(BeFalse())
 	})
 
+	It("reads UniFi's ULP-style unit layout", func() {
+		// Spaces around '=', a leading space in ExecStart=, an empty
+		// Wants= and no final newline, as uid-agent.service ships.
+		s, err := service("uid-agent.service", "[Unit]\nDescription = UID Agent service\nWants = \n[Service]\n"+
+			"ExecStart= /usr/lib/uid-agent/scripts/service/start.sh\nType = notify\nPIDFile = /run/uid-agent.pid\n"+
+			"WatchdogSec = 180\nKillMode = process\nLimitNOFILE=65536")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.Description).To(Equal("UID Agent service"))
+		Expect(s.Type).To(Equal("notify"))
+		Expect(s.PIDFile).To(Equal("/run/uid-agent.pid"))
+		Expect(s.Watchdog).To(Equal(180 * time.Second))
+		Expect(s.KillMode).To(Equal("process"))
+		Expect(s.NoFile).To(Equal(&syscall.Rlimit{Cur: 65536, Max: 65536}))
+		_, argv := s.ExecStart[0].Argv(nil)
+		Expect(argv).To(Equal([]string{"/usr/lib/uid-agent/scripts/service/start.sh"}))
+	})
+
+	It("reads SuccessExitStatus= statuses and signals", func() {
+		s, err := service("unifi.service", "[Service]\nExecStart=/a\nSuccessExitStatus=143\nSuccessExitStatus=75 SIGUSR1\n")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.SuccessExitStatuses).To(Equal([]int{143, 75}))
+		Expect(s.SuccessSignals).To(Equal([]syscall.Signal{syscall.SIGUSR1}))
+	})
+
 	It("requires ExecStart unless oneshot", func() {
 		_, err := service("x.service", "[Service]\nType=simple\n")
 		Expect(err).To(MatchError(ContainSubstring("no ExecStart")))
@@ -86,4 +110,13 @@ var _ = DescribeTable("ParseDuration",
 	Entry("compound", "1min 30s", 90*time.Second),
 	Entry("milliseconds", "500ms", 500*time.Millisecond),
 	Entry("infinity", "infinity", time.Duration(0)),
+)
+
+var _ = DescribeTable("ParseLimit",
+	func(in string, want syscall.Rlimit) {
+		Expect(unit.ParseLimit(in)).To(Equal(&want))
+	},
+	Entry("one value", "65536", syscall.Rlimit{Cur: 65536, Max: 65536}),
+	Entry("soft and hard", "1024:4096", syscall.Rlimit{Cur: 1024, Max: 4096}),
+	Entry("infinity", "infinity", syscall.Rlimit{Cur: ^uint64(0), Max: ^uint64(0)}),
 )

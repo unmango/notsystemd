@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -121,6 +122,13 @@ func (ru *run) prepare() error {
 		syscall.Umask(int(*svc.UMask))
 	} else {
 		syscall.Umask(0o022)
+	}
+	// Every process the unit runs inherits notsystemd's own limit, which
+	// it only ever holds for this one unit.
+	if svc.NoFile != nil {
+		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, svc.NoFile); err != nil {
+			return fmt.Errorf("LimitNOFILE: %w", err)
+		}
 	}
 
 	ru.env = map[string]string{"PATH": defaultPath}
@@ -473,7 +481,7 @@ func (ru *run) mainExited(ws syscall.WaitStatus) {
 		return
 	}
 	ru.Log.Info("main process exited", "unit", ru.Service.Name, "pid", ru.mainPID, "status", describe(ws))
-	if ru.st.Result == "success" && !clean(ws) {
+	if ru.st.Result == "success" && !ru.clean(ws) {
 		ru.st.Result = result(ws)
 	}
 }
@@ -718,17 +726,18 @@ func lookupCredentials(userName, groupName string) (*syscall.Credential, *user.U
 	return creds, u, nil
 }
 
-// clean reports whether systemd would count an exit as successful: exit
-// status 0, or death by one of the signals it treats as a clean stop.
-func clean(ws syscall.WaitStatus) bool {
+// clean reports whether systemd would count a main process exit as
+// successful: exit status 0, death by one of the signals it treats as a clean
+// stop, or anything the unit lists in SuccessExitStatus=.
+func (ru *run) clean(ws syscall.WaitStatus) bool {
 	if ws.Exited() {
-		return ws.ExitStatus() == 0
+		return ws.ExitStatus() == 0 || slices.Contains(ru.Service.SuccessExitStatuses, ws.ExitStatus())
 	}
 	switch ws.Signal() {
 	case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGPIPE:
 		return true
 	}
-	return false
+	return slices.Contains(ru.Service.SuccessSignals, ws.Signal())
 }
 
 func result(ws syscall.WaitStatus) string {

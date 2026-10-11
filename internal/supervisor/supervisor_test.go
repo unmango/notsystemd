@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -103,6 +104,35 @@ ExecStopPost=/bin/sh -c 'echo $SERVICE_RESULT $EXIT_CODE $EXIT_STATUS > %D/stopp
 		Expect(h.exitCode()).To(Equal(3))
 		Expect(h.file("stoppost")).To(Equal("exit-code exited 3"))
 		Expect(h.activeState()).To(Equal("failed"))
+	})
+
+	It("counts a SuccessExitStatus= status as a clean exit", func() {
+		// The JVM exits 143 on SIGTERM, which unifi.service lists.
+		h := start(`
+[Service]
+ExecStart=/bin/sh -c 'exit 143'
+SuccessExitStatus=143
+ExecStopPost=/bin/sh -c 'echo $SERVICE_RESULT $EXIT_STATUS > %D/stoppost'
+`)
+		Expect(h.exitCode()).To(Equal(0))
+		Expect(h.file("stoppost")).To(Equal("success 143"))
+		Expect(h.activeState()).To(Equal("inactive"))
+	})
+
+	It("applies LimitNOFILE= to the service", func() {
+		// The limit is notsystemd's own, so keep the hard limit where it is:
+		// a lowered one could not be raised again for the specs after this.
+		var lim syscall.Rlimit
+		Expect(syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim)).To(Succeed())
+		DeferCleanup(syscall.Setrlimit, syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: lim.Cur, Max: lim.Max})
+		h := start(fmt.Sprintf(`
+[Service]
+Type=oneshot
+LimitNOFILE=1000:%d
+ExecStart=/bin/sh -c 'ulimit -Sn > %%D/soft'
+`, lim.Max))
+		Expect(h.exitCode()).To(Equal(0))
+		Expect(h.file("soft")).To(Equal("1000"))
 	})
 
 	It("does not start when ExecStartPre fails, unless prefixed with '-'", func() {
