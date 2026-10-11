@@ -59,6 +59,16 @@
           packages = {
             inherit notsystemd;
             default = notsystemd;
+
+            # sudo, systemctl, systemd-run and timedatectl, each a link to
+            # notsystemd, which answers as the command it is invoked as. A
+            # separate package so that installing notsystemd shadows nothing.
+            shims = pkgs.runCommand "notsystemd-shims" { } ''
+              mkdir -p $out/bin
+              for name in sudo systemctl systemd-run timedatectl; do
+                ln -s ${pkgs.lib.getExe notsystemd} $out/bin/$name
+              done
+            '';
           };
 
           devShells.default = pkgs.mkShellNoCC {

@@ -11,10 +11,13 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
 	"github.com/unmango/notsystemd/internal/notify"
+	"github.com/unmango/notsystemd/internal/shim"
 	"github.com/unmango/notsystemd/internal/state"
 	"github.com/unmango/notsystemd/internal/supervisor"
 	"github.com/unmango/notsystemd/internal/unit"
@@ -28,10 +31,18 @@ Commands:
   show UNIT            print the unit's recorded state as JSON
   notify ASSIGNMENT... send KEY=VALUE assignments to $NOTIFY_SOCKET
 
+  sudo, systemctl, systemd-run, timedatectl
+                       stand-ins for those commands, also run when notsystemd
+                       is invoked under their names
+
 Run "notsystemd <command> -h" for a command's flags.
 `
 
 func main() {
+	// Invoked through a link named after a command it stands in for.
+	if name := filepath.Base(os.Args[0]); slices.Contains(shim.Names, name) {
+		os.Exit(shimCmd(name, os.Args[1:]))
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -47,6 +58,8 @@ func main() {
 		code = showCmd(args)
 	case "notify":
 		code = notifyCmd(args)
+	case "sudo", "systemctl", "systemd-run", "timedatectl":
+		code = shimCmd(cmd, args)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -193,4 +206,25 @@ func notifyCmd(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func shimCmd(name string, args []string) int {
+	e := shim.Default()
+	switch name {
+	case "systemctl":
+		return shim.Systemctl(e, args)
+	case "timedatectl":
+		return shim.Timedatectl(e, args)
+	}
+
+	parse := shim.ParseSudo
+	if name == "systemd-run" {
+		parse = shim.ParseSystemdRun
+	}
+	plan, err := parse(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+		return 1
+	}
+	return shim.Exec(e, plan)
 }
