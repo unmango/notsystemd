@@ -18,6 +18,7 @@ $ notsystemd run /lib/systemd/system/unifi-core.service
 - `notsystemd is-active UNIT` exits 0 while the unit is active, for a readiness probe.
 - `notsystemd show UNIT` prints the unit's recorded state as JSON.
 - `notsystemd notify [--ready] [--status TEXT] [KEY=VALUE]...` sends a notification to `$NOTIFY_SOCKET`, like `systemd-notify`.
+- `notsystemd dbus [--socket PATH]` serves `org.freedesktop.systemd1` on a system bus socket; see [D-Bus](#d-bus).
 - `notsystemd sudo`, `systemctl`, `systemd-run` and `timedatectl` stand in for those commands; see [Shims](#shims).
 
 Every command takes `--state-dir` (default `/run/notsystemd`).
@@ -62,9 +63,22 @@ The shims find unit state in `$NOTSYSTEMD_STATE_DIR`, default `/run/notsystemd`.
 - `sudo` runs its command as `-u`/`-g`, keeping the environment apart from `HOME`, `USER` and `LOGNAME`, and asks for no password.
   Only root can switch users, as with sudo's `-n`.
 
-## Planned
+## D-Bus
 
-A D-Bus facade serving `org.freedesktop.systemd1` from the state directory, for software that watches units' `ActiveState` and `StatusText` over the system bus.
+Some software watches units over the system bus rather than running `systemctl`.
+`notsystemd dbus` is that bus: it listens on `--socket` (default `/run/dbus/system_bus_socket`) and answers as both the bus daemon and `org.freedesktop.systemd1`, from the state directory, so no `dbus-daemon` runs in the pod.
+Run it as a sidecar and share `/run/dbus` with the containers that connect, alongside the state directory.
+
+- Clients authenticate with `EXTERNAL` or `ANONYMOUS`; file descriptor passing is refused.
+  Messages over 1 MiB are refused, and so is a unit name containing `/`, so no client can read outside the state directory.
+- The bus answers `Hello`, `AddMatch`, `RemoveMatch`, `GetNameOwner`, `NameHasOwner`, `ListNames`, `GetId` and `Introspect`.
+  Match rules are accepted and not applied: every client gets every signal, since systemd1 is the only sender.
+- The manager at `/org/freedesktop/systemd1` answers `GetUnit`, `LoadUnit`, `Subscribe` and `Unsubscribe`.
+- Each unit's object has the `org.freedesktop.systemd1.Unit` properties `Id`, `Names`, `Description`, `LoadState`, `ActiveState` and `SubState`, and the `org.freedesktop.systemd1.Service` properties `StatusText`, `MainPID`, `Result` and `ExecMainStatus`, read with `Get` or `GetAll`.
+  A unit the pod does not run reads as inactive with `LoadState=not-found`.
+  Every property is read-only.
+- The state directory is polled, and a change is sent as `PropertiesChanged`, one signal per interface, from systemd1's unique name, as systemd does.
+  Methods that change units (`StartUnit`, `StopUnit` and the rest) are not implemented; the pod spec decides which units run.
 
 ## Development
 

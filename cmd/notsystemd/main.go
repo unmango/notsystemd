@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/unmango/notsystemd/internal/dbus"
 	"github.com/unmango/notsystemd/internal/notify"
 	"github.com/unmango/notsystemd/internal/shim"
 	"github.com/unmango/notsystemd/internal/state"
@@ -30,6 +31,7 @@ Commands:
   is-active UNIT       exit 0 if the unit is active, for readiness probes
   show UNIT            print the unit's recorded state as JSON
   notify ASSIGNMENT... send KEY=VALUE assignments to $NOTIFY_SOCKET
+  dbus                 serve org.freedesktop.systemd1 on a system bus socket
 
   sudo, systemctl, systemd-run, timedatectl
                        stand-ins for those commands, also run when notsystemd
@@ -58,6 +60,8 @@ func main() {
 		code = showCmd(args)
 	case "notify":
 		code = notifyCmd(args)
+	case "dbus":
+		code = dbusCmd(args)
 	case "sudo", "systemctl", "systemd-run", "timedatectl":
 		code = shimCmd(cmd, args)
 	case "-h", "--help", "help":
@@ -123,6 +127,38 @@ func runCmd(args []string) int {
 
 	s := &supervisor.Supervisor{Service: svc, StateDir: *stateDir, Log: log}
 	return s.Run(ctx, reload)
+}
+
+func dbusCmd(args []string) int {
+	fs := flag.NewFlagSet("dbus", flag.ExitOnError)
+	stateDir := fs.String("state-dir", state.DefaultDir, "directory for unit state")
+	socket := fs.String("socket", dbus.DefaultSocket, "path of the system bus socket to serve")
+	verbose := fs.Bool("verbose", false, "log every connection error")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: notsystemd dbus [flags]")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+
+	level := slog.LevelInfo
+	if *verbose {
+		level = slog.LevelDebug
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	s := &dbus.Server{StateDir: *stateDir, Log: log}
+	log.Info("serving org.freedesktop.systemd1", "socket", *socket, "state-dir", *stateDir)
+	if err := s.ListenAndServe(ctx, *socket); err != nil {
+		log.Error("serving the bus", "err", err)
+		return 1
+	}
+	return 0
 }
 
 func unitName(arg string) string {
