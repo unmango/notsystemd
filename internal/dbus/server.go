@@ -80,8 +80,26 @@ func (c *client) send(m *Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.conn.Write(b)
+	// A client that stops reading must not stall signals to the others.
+	c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	if _, err = c.conn.Write(b); err != nil {
+		// Part of the message may be on the wire, so nothing sent after it
+		// would parse; the client's read loop ends when the socket closes.
+		c.conn.Close()
+	}
 	return err
+}
+
+// writeTimeout bounds how long a client may take to accept one message.
+const writeTimeout = 5 * time.Second
+
+// maxTracked bounds the units a server watches, since clients name them.
+const maxTracked = 1024
+
+// validUnitName reports whether a client-supplied name can only refer to a
+// file in the state directory.
+func validUnitName(name string) bool {
+	return name != "" && !strings.ContainsAny(name, "/\x00")
 }
 
 // ListenAndServe serves the bus on a Unix socket at path until ctx is done.
@@ -371,10 +389,16 @@ func (s *Server) systemd(m *Message) *Message {
 			return returnOf(m, "")
 		case ifaceManager + ".LoadUnit", ".LoadUnit":
 			name, _ := stringArg(m, 0)
+			if !validUnitName(name) {
+				return invalidUnit(m, name)
+			}
 			s.track(name)
 			return returnOf(m, "o", UnitPath(name))
 		case ifaceManager + ".GetUnit", ".GetUnit":
 			name, _ := stringArg(m, 0)
+			if !validUnitName(name) {
+				return invalidUnit(m, name)
+			}
 			if _, err := state.Read(s.StateDir, name); err != nil {
 				return errorReply(m, "org.freedesktop.systemd1.NoSuchUnit",
 					fmt.Sprintf("Unit %s not loaded.", name))
@@ -395,7 +419,7 @@ func (s *Server) systemd(m *Message) *Message {
 	}
 
 	name, ok := unitName(path)
-	if !ok {
+	if !ok || !validUnitName(name) {
 		return errorReply(m, "org.freedesktop.DBus.Error.UnknownObject",
 			fmt.Sprintf("Unknown object '%s'.", path))
 	}
@@ -493,7 +517,7 @@ func (s *Server) track(name string) {
 	u := s.read(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.last[name]; !ok {
+	if _, ok := s.last[name]; !ok && len(s.last) < maxTracked {
 		s.last[name] = u
 	}
 }
@@ -565,6 +589,11 @@ func (s *Server) changed(name string) {
 			}
 		}
 	}
+}
+
+func invalidUnit(m *Message, name string) *Message {
+	return errorReply(m, "org.freedesktop.DBus.Error.InvalidArgs",
+		fmt.Sprintf("Unit name %q is not valid.", name))
 }
 
 func propertiesChanged(name, iface string, props map[string]Variant) *Message {

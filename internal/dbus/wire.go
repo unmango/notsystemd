@@ -270,6 +270,11 @@ func splitType(sig string) (string, string, error) {
 					if sig[i] != closer {
 						return "", "", fmt.Errorf("dbus: mismatched %q", sig)
 					}
+					// An empty struct would decode without reading a byte,
+					// so an array of them would never end.
+					if i == 1 {
+						return "", "", fmt.Errorf("dbus: empty container %q", sig[:2])
+					}
 					return sig[:i+1], sig[i+1:], nil
 				}
 			}
@@ -280,9 +285,15 @@ func splitType(sig string) (string, string, error) {
 	}
 }
 
+// maxDepth is how deeply containers may nest, the specification's 32 arrays
+// plus 32 structs. A variant names its own signature, so without a limit a
+// body could recurse until the stack overflows, which recover cannot catch.
+const maxDepth = 64
+
 type decoder struct {
-	buf []byte
-	pos int
+	buf   []byte
+	pos   int
+	depth int
 }
 
 var errShort = errors.New("dbus: message truncated")
@@ -350,6 +361,14 @@ func (d *decoder) decode(sig string) (any, string, error) {
 	}
 	if err := d.align(alignment(typ[0])); err != nil {
 		return nil, "", err
+	}
+	switch typ[0] {
+	case 'v', 'a', '(', '{':
+		if d.depth >= maxDepth {
+			return nil, "", errors.New("dbus: values nested too deeply")
+		}
+		d.depth++
+		defer func() { d.depth-- }()
 	}
 	switch typ[0] {
 	case 'y':

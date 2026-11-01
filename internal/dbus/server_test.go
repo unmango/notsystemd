@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -160,6 +161,16 @@ var _ = Describe("Server", func() {
 		Expect(service.Body[1]).To(Equal([]any{dbus.DictEntry{Key: "StatusText", Value: dbus.Variant{Sig: "s", Value: `{"ok":true}`}}}))
 	})
 
+	It("refuses a unit name that leaves the state directory", func() {
+		reply := client.call("org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+			"org.freedesktop.systemd1.Manager", "LoadUnit", "s", "../ulp-go.service")
+		Expect(reply.ErrorName).To(Equal("org.freedesktop.DBus.Error.InvalidArgs"))
+
+		reply = client.call("org.freedesktop.systemd1", dbus.UnitPath("../ulp-go.service"),
+			"org.freedesktop.DBus.Properties", "Get", "ss", "org.freedesktop.systemd1.Unit", "ActiveState")
+		Expect(reply.ErrorName).To(Equal("org.freedesktop.DBus.Error.UnknownObject"))
+	})
+
 	It("answers a call to another service with an error", func() {
 		reply := client.call("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
 			"org.freedesktop.DBus.Properties", "Get", "ss", "org.freedesktop.timedate1", "NTP")
@@ -181,5 +192,11 @@ var _ = Describe("ReadMessage", func() {
 		got, err := dbus.ReadMessage(bufio.NewReader(strings.NewReader(string(b))))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(Equal(m))
+	})
+
+	It("refuses a message larger than a method call needs", func() {
+		header := []byte{'l', 1, 0, 1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0}
+		_, err := dbus.ReadMessage(bufio.NewReader(bytes.NewReader(header)))
+		Expect(err).To(MatchError(ContainSubstring("too long")))
 	})
 })

@@ -51,8 +51,10 @@ type Message struct {
 	Body        []any
 }
 
-// maxMessage is the largest message the specification allows.
-const maxMessage = 128 << 20
+// maxMessage is the largest message read. The specification allows 128 MiB,
+// but clients of this bus only send small method calls, and the buffer is
+// allocated from the header before the body arrives.
+const maxMessage = 1 << 20
 
 // ReadMessage reads one message from r.
 func ReadMessage(r *bufio.Reader) (*Message, error) {

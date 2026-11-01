@@ -1,6 +1,8 @@
 package dbus_test
 
 import (
+	"bytes"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -32,6 +34,20 @@ var _ = Describe("Marshal", func() {
 	It("rejects a value of the wrong type", func() {
 		_, err := dbus.Marshal("s", uint32(1))
 		Expect(err).To(MatchError(ContainSubstring("cannot marshal uint32")))
+	})
+})
+
+var _ = Describe("Unmarshal", func() {
+	It("rejects an array of empty structs", func() {
+		_, err := dbus.Unmarshal("a()", []byte{8, 0, 0, 0, 0, 0, 0, 0})
+		Expect(err).To(MatchError(ContainSubstring("empty container")))
+	})
+
+	It("rejects variants nested past the specification's limit", func() {
+		// Each level is a variant whose signature is "v".
+		body := bytes.Repeat([]byte{1, 'v', 0}, 100000)
+		_, err := dbus.Unmarshal("v", body)
+		Expect(err).To(MatchError(ContainSubstring("nested too deeply")))
 	})
 })
 

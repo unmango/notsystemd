@@ -70,6 +70,7 @@ Some software watches units over the system bus rather than running `systemctl`.
 Run it as a sidecar and share `/run/dbus` with the containers that connect, alongside the state directory.
 
 - Clients authenticate with `EXTERNAL` or `ANONYMOUS`; file descriptor passing is refused.
+  Messages over 1 MiB are refused, and so is a unit name containing `/`, so no client can read outside the state directory.
 - The bus answers `Hello`, `AddMatch`, `RemoveMatch`, `GetNameOwner`, `NameHasOwner`, `ListNames`, `GetId` and `Introspect`.
   Match rules are accepted and not applied: every client gets every signal, since systemd1 is the only sender.
 - The manager at `/org/freedesktop/systemd1` answers `GetUnit`, `LoadUnit`, `Subscribe` and `Unsubscribe`.
