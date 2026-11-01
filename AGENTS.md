@@ -33,3 +33,20 @@ make tidy   # go mod tidy + regenerate nix/gomod2nix.toml; run after any go.mod 
 - No runtime dependencies beyond the Go standard library, and the binary is built with `CGO_ENABLED=0`, so an image can copy it in without a libc.
 - Tests are Ginkgo/Gomega. The supervisor specs run real processes: `/bin/sh` and unqualified coreutils resolved through `PATH`, because the Nix build sandbox has `/bin/sh` and nothing else under `/bin`.
   The suite's `TestMain` turns the test binary into a notify daemon when `NOTSYSTEMD_HELPER` is set; add a mode there rather than shipping a fixture binary.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues, through the `gh` CLI.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels, each named after its role: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root.
+See `docs/agents/domain.md`.
