@@ -24,6 +24,7 @@ make tidy   # go mod tidy + regenerate nix/gomod2nix.toml; run after any go.mod 
 - `internal/unit`: unit file parsing (`File`, drop-ins), Exec line parsing and expansion (`Command`), environment files, and `Service`, the typed view of `[Service]`.
 - `internal/supervisor`: the lifecycle. `reaper.go` owns every `wait4`; nothing else may wait on a child, since a second waiter would steal statuses.
 - `internal/notify`: the `$NOTIFY_SOCKET` listener and a sender.
+- `internal/dbus`: the D-Bus wire protocol and a server that is both the system bus and `org.freedesktop.systemd1`, answering from the state files. Little-endian only, no file descriptors.
 - `internal/state`: the per-unit JSON state file other containers and probes read.
 - `internal/shim`: `sudo`, `systemctl`, `systemd-run` and `timedatectl` stand-ins, answered from the state files. `Exec` replaces the process, so its specs run it in a subprocess through the suite's `TestMain`.
 
