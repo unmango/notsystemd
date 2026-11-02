@@ -25,10 +25,17 @@ The backend that reads unit state from the shared state directory and acts by si
 **Kubernetes backend**:
 The backend that finds units and acts on them through the Kubernetes API, so it reaches units in other pods.
 
+**Action**:
+A request, named by its systemd verb (`restart`, `enable`, `daemon-reload`...), for a backend to change a unit or the manager. Each backend decides what a verb means for it.
+_Avoid_: command, operation, job
+
+**Transient run**:
+A command started on request, as `systemd-run` does, rather than a unit the pod spec declares. It is not an Action on a unit.
+
 ## Relationships
 
 - A **Supervisor** runs exactly one **Unit**.
-- A **Shim** reaches **Units** only through a **Backend**.
+- A **Shim** reaches **Units** only through a **Backend**, and changes them only by sending it an **Action**.
 - The **Pod backend** reaches **Units** in its own pod; the **Kubernetes backend** reaches **Units** across the cluster.
 
 ## Flagged ambiguities
