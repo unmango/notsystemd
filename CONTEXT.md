@@ -25,6 +25,9 @@ The backend that reads unit state from the shared state directory and acts by si
 **Kubernetes backend**:
 The backend that finds units and acts on them through the Kubernetes API, so it reaches units in other pods.
 
+**Claim**:
+A workload's or pod's declaration that it runs a unit. A unit nothing claims does not exist for the kubernetes backend; a unit claimed twice is misconfigured.
+
 **Action**:
 A request, named by its systemd verb (`restart`, `enable`, `daemon-reload`...), for a backend to change a unit or the manager. Each backend decides what a verb means for it.
 _Avoid_: command, operation, job
