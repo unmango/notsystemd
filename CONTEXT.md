@@ -32,6 +32,9 @@ A workload's or pod's declaration that it runs a unit. A unit nothing claims doe
 A request, named by its systemd verb (`restart`, `enable`, `daemon-reload`...), for a backend to change a unit or the manager. Each backend decides what a verb means for it.
 _Avoid_: command, operation, job
 
+**Delegation**:
+The kubernetes backend carrying out an Action by having the target unit's own container perform it through the pod backend, so the unit sees exactly what it would see in its own pod.
+
 **Transient run**:
 A command started on request, as `systemd-run` does, rather than a unit the pod spec declares. It is not an Action on a unit.
 
